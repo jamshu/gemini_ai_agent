@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
 from enum import Enum
-
+from dotenv import load_dotenv
 
 class ModelType(Enum):
     """Supported AI model types"""
@@ -53,6 +53,7 @@ class Config:
     """
     
     # Core settings
+    load_dotenv()
     api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
     model: ModelType = ModelType.GEMINI_FLASH
     max_iterations: int = 30

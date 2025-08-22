@@ -10,13 +10,11 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable
 from google import genai
 from google.genai import types
-
 from .config import Config
 from .conversation import ConversationManager
 from .logging_config import setup_logging, get_agent_logger
 from .tools.file_tools import (
     read_file, write_file, list_files, search_files,
-    schema_read_file, schema_write_file, schema_list_files
 )
 from .tools.system_tools import (
     run_command, get_system_info, manage_processes,
@@ -94,9 +92,6 @@ class Agent:
         # Create Gemini tools declaration
         self.available_tools = types.Tool(
             function_declarations=[
-                schema_read_file,
-                schema_write_file,
-                schema_list_files,
                 schema_run_command,
                 schema_get_system_info,
                 schema_manage_processes,
@@ -155,7 +150,7 @@ class Agent:
             self.logger_manager.log_error(e, {"user_input": user_input})
             
             error_message = f"I encountered an error: {str(e)}. Please try again."
-            self.conversation.add_message("assistant", error_message, 
+            self.conversation.add_message("assistant", error_message,
                                         metadata={"error": str(e)})
             return error_message
     
@@ -253,7 +248,7 @@ class Agent:
                         time.sleep(self.config.retry_delay * (attempt + 1))
                     else:
                         raise
-        
+
         # If we reach here, no final response was generated
         return "I couldn't generate a complete response. Please try rephrasing your request."
     
@@ -286,129 +281,55 @@ class Agent:
             if function_name in self.tool_functions:
                 try:
                     result = self.tool_functions[function_name](**function_args)
-                    duration = time.time() - start_time
                     
-                    # Log function execution
-                    self.logger_manager.log_function_call(
-                        function_name, function_args, result, duration
-                    )
-                    
-                    # Create response part
+                    # Prepare function response
                     responses.append(
-                        types.Part.from_function_response(
-                            name=function_name,
-                            response={"result": result}
+                        types.Part(
+                            function_response=types.FunctionResponse(
+                                name=function_name,
+                                response={"result": str(result)}
+                            )
                         )
                     )
-                
                 except Exception as e:
-                    self.logger.error(f"Function {function_name} failed: {e}")
+                    error_message = f"Function {function_name} failed: {e}"
+                    self.logger.error(error_message)
                     responses.append(
-                        types.Part.from_function_response(
-                            name=function_name,
-                            response={"error": str(e)}
+                        types.Part(
+                            function_response=types.FunctionResponse(
+                                name=function_name,
+                                response={"error": error_message}
+                            )
                         )
                     )
             else:
-                self.logger.warning(f"Unknown function: {function_name}")
+                error_message = f"Function {function_name} not found."
+                self.logger.warning(error_message)
                 responses.append(
-                    types.Part.from_function_response(
-                        name=function_name,
-                        response={"error": f"Unknown function: {function_name}"}
+                    types.Part(
+                        function_response=types.FunctionResponse(
+                            name=function_name,
+                            response={"error": error_message}
+                        )
                     )
                 )
         
         return responses
     
-    def _update_metrics(self, elapsed_time: float, success: bool):
-        """Update performance metrics."""
-        if success:
-            # Update average response time
-            total_successful = self.metrics["successful_requests"]
-            current_avg = self.metrics["average_response_time"]
-            
-            self.metrics["average_response_time"] = (
-                (current_avg * (total_successful - 1) + elapsed_time) / total_successful
-                if total_successful > 0 else elapsed_time
-            )
-    
     def get_metrics(self) -> Dict[str, Any]:
-        """Get current metrics."""
-        metrics = self.metrics.copy()
-        metrics.update(self.logger_manager.get_metrics_summary())
-        
-        if self.conversation.current_session:
-            metrics["current_session"] = {
-                "id": self.conversation.current_session.session_id,
-                "messages": len(self.conversation.current_session.messages),
-                "duration": (
-                    self.conversation.current_session.updated_at -
-                    self.conversation.current_session.created_at
-                ).total_seconds()
-            }
-        
-        return metrics
+        """Get agent performance metrics."""
+        return self.metrics
     
-    def reset_session(self):
-        """Start a new conversation session."""
-        self.conversation.create_session()
-        self.logger.info("Started new conversation session")
-    
-    def search_history(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """
-        Search conversation history.
-        
-        Args:
-            query: Search query
-            limit: Maximum number of results
-        
-        Returns:
-            List of matching sessions
-        """
-        sessions = self.conversation.search_sessions(query, limit)
-        return [
-            {
-                "session_id": s.session_id,
-                "summary": s.summarize(),
-                "messages_count": len(s.messages)
-            }
-            for s in sessions
-        ]
-    
-    def export_session(
-        self,
-        session_id: Optional[str] = None,
-        format: str = "json"
-    ) -> str:
-        """
-        Export a conversation session.
-        
-        Args:
-            session_id: Session ID (current if not provided)
-            format: Export format (json, markdown)
-        
-        Returns:
-            Exported session data
-        """
-        if not session_id and self.conversation.current_session:
-            session_id = self.conversation.current_session.session_id
-        
-        if not session_id:
-            raise ValueError("No session to export")
-        
+    def export_session(self, session_id: str, format: str = "json") -> str:
+        """Export a specific session."""
         return self.conversation.export_session(session_id, format)
     
+    def search_history(self, query: str) -> List[Dict[str, str]]:
+        """Search conversation history."""
+        return self.conversation.search(query)
+    
     def cleanup(self):
-        """Cleanup resources and save state."""
-        # Save current session
-        if self.conversation.current_session:
-            self.conversation.save_session(self.conversation.current_session)
-        
-        # Export metrics
-        metrics_file = self.config.data_dir / "metrics.json"
-        self.logger_manager.export_metrics(metrics_file)
-        
-        # Save configuration
-        self.config.save()
-        
-        self.logger.info("Agent cleanup completed")
+        """Clean up resources."""
+        self.logger.info("Cleaning up resources...")
+        self.conversation.close()
+        self.logger.info("Cleanup complete.")

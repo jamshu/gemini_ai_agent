@@ -195,7 +195,7 @@ Examples:
             if results:
                 print(f"Found {len(results)} matching sessions:")
                 for result in results:
-                    print(f"  - {result['session_id']}: {result['summary']}")
+                    print(f"  - {result['session_id']}: {result['summary']}\n")
             else:
                 print(f"No results found for: {args.search}")
             return
