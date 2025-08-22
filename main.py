@@ -32,7 +32,7 @@ def main():
         print(f"User prompt: {user_prompt}\n")
 
     messages = [
-        types.Content(role="user", parts=[types.Part(text=user_prompt)]),
+        types.Content(role="user", parts=[types.Part(text=system_prompt + '\n' + user_prompt)]),
     ]
 
     generate_content(client, messages, verbose)
@@ -44,6 +44,7 @@ def generate_content(client, messages, verbose):
     for iteration in range(max_iterations):
         try:
             # Generate content with the current conversation state
+            print(f'contents (first 2 items): {messages[:2]}')  # Added debug print
             response = client.models.generate_content(
                 model="gemini-2.0-flash-001",
                 contents=messages,
