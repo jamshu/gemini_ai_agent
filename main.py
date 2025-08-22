@@ -59,7 +59,7 @@ def generate_content(client, messages, verbose):
             
             # Add the model's response (candidates) to the conversation
             for candidate in response.candidates:
-                messages.append(candidate.content)
+                messages.append(types.Content(role="model", parts=candidate.content.parts))
             
             # Handle function calls if present (check this BEFORE checking for text)
             if response.function_calls:
