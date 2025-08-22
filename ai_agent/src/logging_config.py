@@ -257,6 +257,13 @@ class AgentLogger:
         
         self.logger.info(f"Metrics exported to {output_file}")
 
+    def shutdown(self):
+        """Shutdown the logger and close all handlers."""
+        for handler in self.logger.handlers:
+            if hasattr(handler, "close"):
+                handler.close()
+            self.logger.removeHandler(handler)
+
 
 # Global logger instance
 _logger_instance: Optional[AgentLogger] = None
@@ -302,3 +309,4 @@ def get_agent_logger() -> AgentLogger:
         setup_logging()
     
     return _logger_instance
+

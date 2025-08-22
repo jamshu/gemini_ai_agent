@@ -1,13 +1,6 @@
-"""
-Core Agent Implementation
-========================
-
-The main AI Agent class that integrates all components.
-"""
-
-import time
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable
+import time
 from google import genai
 from google.genai import types
 from .config import Config
@@ -170,7 +163,6 @@ class Agent:
                 parts=[types.Part(text=user_input)]
             )
         )
-        
         return messages
     
     def _generate_with_retry(
@@ -285,51 +277,50 @@ class Agent:
                     # Prepare function response
                     responses.append(
                         types.Part(
-                            function_response=types.FunctionResponse(
-                                name=function_name,
-                                response={"result": str(result)}
-                            )
+                            text=str(result)
                         )
                     )
                 except Exception as e:
-                    error_message = f"Function {function_name} failed: {e}"
-                    self.logger.error(error_message)
+                    self.logger.error(f"Function {function_name} failed: {e}")
                     responses.append(
                         types.Part(
-                            function_response=types.FunctionResponse(
-                                name=function_name,
-                                response={"error": error_message}
-                            )
+                            text=f"Error executing {function_name}: {e}"
                         )
                     )
             else:
-                error_message = f"Function {function_name} not found."
-                self.logger.warning(error_message)
+                self.logger.warning(f"Function {function_name} not found")
                 responses.append(
                     types.Part(
-                        function_response=types.FunctionResponse(
-                            name=function_name,
-                            response={"error": error_message}
-                        )
+                        text=f"Function {function_name} not found."
                     )
                 )
+            
+            self.logger.info(f"Function {function_name} completed in {time.time() - start_time:.4f}s")
         
         return responses
-    
+
     def get_metrics(self) -> Dict[str, Any]:
-        """Get agent performance metrics."""
+        """Get performance metrics"""
         return self.metrics
-    
+
     def export_session(self, session_id: str, format: str = "json") -> str:
-        """Export a specific session."""
-        return self.conversation.export_session(session_id, format)
+        """Export a specific session by ID."""
+        session_data = self.conversation.load_session(session_id)
+        if not session_data:
+            raise ValueError(f"Session not found: {session_id}")
+        
+        if format == "json":
+            import json
+            return json.dumps(session_data, indent=2)
+        else:
+            raise ValueError(f"Unsupported format: {format}")
     
-    def search_history(self, query: str) -> List[Dict[str, str]]:
-        """Search conversation history."""
+    def search_history(self, query: str) -> List[Dict[str, Any]]:
+        """Search conversation history for a query."""
         return self.conversation.search(query)
-    
+
     def cleanup(self):
         """Clean up resources."""
-        self.logger.info("Cleaning up resources...")
-        self.conversation.close()
-        self.logger.info("Cleanup complete.")
+        self.logger.info("Cleaning up agent resources")
+        if self.logger_manager:
+            self.logger_manager.shutdown()
