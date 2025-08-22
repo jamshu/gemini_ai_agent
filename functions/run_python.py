@@ -16,6 +16,7 @@ def run_python_file(working_directory, file_path, args=None):
         commands = ["python", abs_file_path]
         if args:
             commands.extend(args)
+        print(f"Executing file: {file_path}")  # Added print statement
         result = subprocess.run(
             commands,
             capture_output=True,
