@@ -297,3 +297,8 @@ class ConversationManager:
                 # Remove from memory if loaded
                 session_id = session_file.stem
                 self.sessions.pop(session_id, None)
+    def close(self):
+        """Perform any cleanup actions"""
+        if self.current_session:
+            self.save_session(self.current_session)
+        # Additional cleanup if needed

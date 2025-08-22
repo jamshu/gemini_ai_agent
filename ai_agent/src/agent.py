@@ -284,43 +284,45 @@ class Agent:
                     self.logger.error(f"Function {function_name} failed: {e}")
                     responses.append(
                         types.Part(
-                            text=f"Error executing {function_name}: {e}"
+                            text=f"Function {function_name} failed: {e}"
                         )
                     )
             else:
-                self.logger.warning(f"Function {function_name} not found")
                 responses.append(
                     types.Part(
-                        text=f"Function {function_name} not found."
+                        text=f"Unknown function {function_name}"
                     )
                 )
-            
-            self.logger.info(f"Function {function_name} completed in {time.time() - start_time:.4f}s")
+            elapsed_time = time.time() - start_time
+            self.logger.debug(f"Function {function_name} executed in {elapsed_time:.4f}s")
         
         return responses
 
     def get_metrics(self) -> Dict[str, Any]:
-        """Get performance metrics"""
+        """Get performance metrics."""
         return self.metrics
 
     def export_session(self, session_id: str, format: str = "json") -> str:
-        """Export a specific session by ID."""
-        session_data = self.conversation.load_session(session_id)
-        if not session_data:
-            raise ValueError(f"Session not found: {session_id}")
-        
-        if format == "json":
-            import json
-            return json.dumps(session_data, indent=2)
-        else:
-            raise ValueError(f"Unsupported format: {format}")
-    
-    def search_history(self, query: str) -> List[Dict[str, Any]]:
-        """Search conversation history for a query."""
+        """Export conversation session."""
+        return self.conversation.export_session(session_id, format)
+
+    def search_history(self, query: str) -> List[Dict[str, str]]:
+        """Search conversation history."""
         return self.conversation.search(query)
 
     def cleanup(self):
         """Clean up resources."""
-        self.logger.info("Cleaning up agent resources")
-        if self.logger_manager:
-            self.logger_manager.shutdown()
+        self.logger.info("Cleaning up agent resources...")
+        self.conversation.close()
+        self.logger.info("Agent cleanup completed.")
+
+    def _update_metrics(self, elapsed_time: float, success: bool):
+        """Update performance metrics."""
+        self.metrics["average_response_time"] = (
+            self.metrics["average_response_time"] * (self.metrics["successful_requests"] - 1) + elapsed_time
+        ) / self.metrics["successful_requests"] if self.metrics["successful_requests"] > 0 else elapsed_time
+
+
+
+
+
