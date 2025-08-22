@@ -50,6 +50,7 @@ def generate_content(client, messages, verbose):
                 config=types.GenerateContentConfig(
                     tools=[available_functions], system_instruction=system_prompt
                 ),
+            )
             
             if verbose:
                 print(f"\nIteration {iteration + 1}:")
@@ -76,8 +77,10 @@ def generate_content(client, messages, verbose):
                     ):
                         raise Exception("empty function call result")
                     
-                    function_response_content = function_call_result.parts[0].function_response.response
-                    function_responses.append(types.Part(text=function_response_content))
+                    if verbose:
+                        print(f"   -> {function_call_result.parts[0].function_response.response}")
+                    
+                    function_responses.append(function_call_result.parts[0])
                 
                 # Add function responses to the conversation as a user message
                 if function_responses:
