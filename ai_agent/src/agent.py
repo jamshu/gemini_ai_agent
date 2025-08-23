@@ -414,6 +414,19 @@ class Agent:
                 
                 except Exception as e:
                     self.logger.warning(f"Attempt {attempt + 1} failed: {e}")
+                    
+                    # Log detailed error information for debugging
+                    if "parts field" in str(e).lower():
+                        self.logger.error("Parts validation error detected. Current messages:")
+                        for i, msg in enumerate(messages):
+                            parts_count = len(msg.parts) if msg.parts else 0
+                            self.logger.error(f"  Message {i}: role={msg.role}, parts_count={parts_count}")
+                            if msg.parts:
+                                for j, part in enumerate(msg.parts):
+                                    has_text = hasattr(part, 'text') and bool(part.text)
+                                    has_func_resp = hasattr(part, 'function_response') and bool(part.function_response)
+                                    self.logger.error(f"    Part {j}: text={has_text}, func_resp={has_func_resp}")
+                    
                     if attempt < retry_attempts - 1:
                         time.sleep(self.config.retry_delay * (attempt + 1))
                     else:
