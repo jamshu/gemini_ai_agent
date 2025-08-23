@@ -35,7 +35,7 @@ def read_file(
         Dictionary with file content and metadata
     """
     path = Path(file_path)
-
+    print(f"Reading file: {file_path}")
     if not path.exists():
         return {"error": f"File not found: {file_path}"}
 
@@ -97,7 +97,7 @@ def write_file(
         Dictionary with operation result
     """
     path = Path(file_path)
-
+    print(f"Writing file: {file_path}")
     try:
         # Create parent directories if needed
         if create_dirs:

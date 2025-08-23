@@ -1,0 +1,82 @@
+
+# Documentation for ai_agent/agent_main.py
+
+This script is the main entry point for the AI Agent, a professional AI coding assistant. It provides both interactive and single-query modes.
+
+## Overview
+
+The script uses the following main components:
+
+-   `argparse`: For parsing command-line arguments.
+-   `src.agent.Agent`: The core agent class responsible for processing requests.
+-   `src.config.Config`:  For managing configuration settings.
+-   `src.cli.InteractiveCLI`: For the interactive command-line interface.
+
+## Functionality
+
+1.  **Command-Line Argument Parsing:**  The script uses `argparse` to handle various command-line arguments, including:
+    *   `query`: The query to process (if not in interactive mode).
+    *   `--model`: The AI model to use (e.g., "gemini-2.0-flash-001", "gemini-1.5-pro").
+    *   `--temperature`: Temperature for response generation.
+    *   `--max-iterations`: Maximum conversation iterations.
+    *   `--file`: File to include in the context.
+    *   `--output`: Output file for the response.
+    *   `--format`: Output format ("text", "markdown", "json").
+    *   `--export-metrics`: Exports performance metrics.
+    *   `--export-session`: Exports a specific session.
+    *   `--search`: Searches conversation history.
+    *   `--config`: Path to the configuration file.
+    *   `--write_file`: Path to the file to write to.
+    *   `--content`: Content to write to the file.
+    *   `--read_file`: Path to the file to read from.
+    *   `--verbose`: Enables verbose output.
+    *   `--debug`: Enables debug logging.
+
+2.  **Configuration Loading:** The script loads configuration settings from a file (if provided via `--config`) or uses default settings. Command-line arguments override the configuration file settings.
+
+3.  **Agent Initialization:** An `Agent` instance is created using the loaded configuration.
+
+4.  **Operation Modes:**
+
+    *   **Interactive Mode:** If no query is provided, the script starts an interactive command-line interface using `InteractiveCLI`.
+    *   **Single Query Mode:** If a query is provided, the script processes the query and prints the response to the console or writes it to a file.
+
+5.  **File Handling:** The script provides options to include a file in the context of the query using the `--file` argument. It also supports writing to a file using the `--write_file` and `--content` arguments. The script can also read from a file using the `--read_file` argument.
+
+6.  **Function Calling:** The script defines a `call_function` function that allows the AI agent to call specific functions. Currently, it supports `write_file` and `read_file` functions.
+    *   `write_file`: Writes content to a specified file.
+    *   `read_file`: Reads content from a specified file.
+
+7.  **Error Handling:** The script includes error handling to catch exceptions and print error messages.
+
+## `call_function` Explanation
+
+The `call_function` function is crucial for enabling the AI agent to interact with the file system.
+
+*   It takes a `function_call_part` argument, which is an object containing the name of the function to call and its arguments.
+*   It uses `json.loads` to parse the arguments from a JSON string.
+*   It then uses `default_api.write_file` to write content to a file and `default_api.get_file_content` to read content from a file.
+*   It returns a dictionary containing the response from the function call.
+
+## Available Functions
+
+The `available_functions` dictionary defines the functions that the AI agent can call. Each function is defined as a dictionary with the following keys:
+
+*   `type`: The type of the function (always "function").
+*   `function`: A dictionary containing the function's name, description, and parameters.
+
+## Main Execution Flow
+
+The `main` function is the entry point of the script. It performs the following steps:
+
+1.  Parses command-line arguments.
+2.  Loads configuration settings.
+3.  Creates an `Agent` instance.
+4.  Handles utility operations (e.g., exporting metrics, exporting sessions, searching history).
+5.  Processes the query or starts the interactive mode.
+
+## Notes
+
+*   The line `sys.path.insert(0, str(Path(__file__).parent))` adds the `src` directory to the Python path, allowing the script to import modules from that directory.
+*   The script assumes that the `src` directory contains the `agent.py`, `config.py`, and `cli.py` modules.
+*   The `call_function` function uses `default_api.write_file` and `default_api.get_file_content` to interact with the file system.
