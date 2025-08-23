@@ -39,7 +39,7 @@ def main():
 
 
 def generate_content(client, messages, verbose):
-    max_iterations = 20
+    max_iterations = 40
     
     for iteration in range(max_iterations):
         try:

@@ -36,33 +36,62 @@ def call_function(function_call_part, verbose=False):
             content = arguments["content"]
             result = default_api.write_file(file_path=file_path, content=content)
             response = {"response": f"File written successfully to {file_path}"}
-            return types.Part(function_response=types.FunctionResponse(name=name, response=json.dumps(response)))
+            return response
         except Exception as e:
             response = {"response": f"Error writing file: {e}"}
-            return types.Part(function_response=types.FunctionResponse(name=name, response=json.dumps(response)))
+            return response
+    elif name == "read_file":
+        try:
+            file_path = arguments["file_path"]
+            result = default_api.get_file_content(file_path=file_path)
+            content = result['get_file_content_response']['result']
+            response = {"response": content}
+            return response
+        except Exception as e:
+            response = {"response": f"Error reading file: {e}"}
+            return response
     else:
         response = {"response": f"Function {name} not supported"}
-        return types.Part(function_response=types.FunctionResponse(name=name, response=json.dumps(response)))
+        return response
 
 
 available_functions = {
-    "type": "function",
-    "function": {
-        "name": "write_file",
-        "description": "Writes content to a file",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "file_path": {
-                    "type": "string",
-                    "description": "The path to the file to write to",
+    "write_file": {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Writes content to a file",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "The path to the file to write to",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The content to write to the file",
+                    },
                 },
-                "content": {
-                    "type": "string",
-                    "description": "The content to write to the file",
-                },
+                "required": ["file_path", "content"],
             },
-            "required": ["file_path", "content"],
+        },
+    },
+    "read_file": {
+        "type": "function",
+        "function": {
+            "name": "read_file",
+            "description": "Reads content from a file",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "The path to the file to read from",
+                    },
+                },
+                "required": ["file_path"],
+            },
         },
     },
 }
@@ -121,12 +150,12 @@ Examples:
     # File operations
     parser.add_argument(
         "--file",
-        type=Path,
+        type=str,
         help="File to include in context"
     )
     parser.add_argument(
         "--dir",
-        type=Path,
+        type=str,
         help="Working directory"
     )
 
@@ -134,7 +163,7 @@ Examples:
     parser.add_argument(
         "--output",
         "-o",
-        type=Path,
+        type=str,
         help="Output file for response"
     )
     parser.add_argument(
@@ -162,7 +191,7 @@ Examples:
     )
     parser.add_argument(
         "--config",
-        type=Path,
+        type=str,
         help="Path to configuration file"
     )
 
@@ -176,6 +205,12 @@ Examples:
         "--content",
         type=str,
         help="Content to write to the file"
+    )
+    # read_file argument
+    parser.add_argument(
+        "--read_file",
+        type=str,
+        help="Path to the file to read from"
     )
 
     # Logging options
@@ -271,70 +306,60 @@ Examples:
 
             # Add file context if provided
             if args.file:
-                if args.file.exists():
-                    context["file"] = str(args.file)
-                    context["file_content"] = args.file.read_text()
+                #context["file"] = str(args.file)
+                #context["file_content"] = args.file.read_text()
+                function_call_part = type('obj', (object,), {'name': 'read_file', 'args': json.dumps({'file_path': args.file})})()
+                file_content_response = call_function(function_call_part, verbose=args.verbose)
+                if file_content_response:
+                  context["file_content"] = file_content_response["response"]
                 else:
-                    print(f"Error: File not found: {args.file}")
-                    sys.exit(1)
+                  print(f"Error reading file {args.file}")
+                  sys.exit(1)
 
             # Process query
             # response = agent.process_request(args.query, context)  #Original
 
-            # Here's the modified part to handle write_file
+            # Here's the modified part to handle write_file and read_file
             if args.write_file and args.content:
                 # Call write_file function directly
                 function_call_part = type('obj', (object,), {'name': 'write_file', 'args': json.dumps({'file_path': args.write_file, 'content': args.content})})()
                 function_response = call_function(function_call_part, verbose=args.verbose)
-                print(json.loads(function_response.function_response.response)["response"]) # Print response
+                print(function_response["response"]) # Print response
+                response = None # Set response to None so the next section will be skipped
+            elif args.read_file:
+                # Call read_file function directly
+                function_call_part = type('obj', (object,), {'name': 'read_file', 'args': json.dumps({'file_path': args.read_file})})()
+                function_response = call_function(function_call_part, verbose=args.verbose)
+                print(function_response["response"])  # Print response
                 response = None # Set response to None so the next section will be skipped
             else:
-                # Process with agent process_request and handle response
                 response = agent.process_request(args.query, context)
 
-            # Format output
-            if response is not None:  # Check if response is not None to skip if we wrote to a file using arguments directly
-                if args.format == "markdown":
-                    from rich.console import Console
-                    from rich.markdown import Markdown
-                    console = Console()
-                    console.print(Markdown(response))
-                elif args.format == "json":
-                    import json
-                    output = json.dumps({
-                        "query": args.query,
-                        "response": response,
-                        "context": context
-                    }, indent=2)
-                    print(output)
-                else:
-                    print(response)
-
-                # Save to file if requested
+            if response:
                 if args.output:
-                    args.output.write_text(response)
-                    print(f"\nResponse saved to {args.output}")
-
-            # Cleanup
-            agent.cleanup()
+                    if args.format == "json":
+                        output = json.dumps(response, indent=2)
+                    else:
+                        output = response["response"]
+                    with open(args.output, "w") as f:
+                        f.write(output)
+                    print(f"Response written to {args.output}")
+                else:
+                    print(response["response"])
 
         else:
             # Interactive mode
             cli = InteractiveCLI(agent)
-            try:
-                cli.run()
-            except KeyboardInterrupt:
-                print("\n\nInterrupted by user")
-                agent.cleanup()
-                sys.exit(0)
+            cli.run()
 
     except Exception as e:
         print(f"Error: {e}")
-        if args.debug:
-            import traceback
-            traceback.print_exc()
         sys.exit(1)
 
+
+# The following code should be placed within the _generate_with_retry function in src/agent.py, replacing the original line.
+# total_tokens += response.usage_metadata.prompt_token_count + response.usage_metadata.completion_token_count
+# total_tokens += (response.usage_metadata.prompt_token_count or 0) + (response.usage_metadata.completion_token_count or 0)
 
 if __name__ == "__main__":
     main()

@@ -114,7 +114,7 @@ class Agent:
         self.metrics["total_requests"] += 1
         
         try:
-            # Add to conversation history
+            # Add to conversation history (using 'assistant' for internal storage)
             self.conversation.add_message("user", user_input, metadata=context)
             
             # Get conversation context
@@ -154,7 +154,23 @@ class Agent:
         # Add conversation context if enabled
         if self.config.enable_history:
             context_messages = self.conversation.get_context(max_messages=10)
-            messages.extend(context_messages)
+            # Convert conversation messages to proper format
+            for msg in context_messages:
+                # Map 'assistant' role to 'model' for Gemini API
+                role = "model" if msg.get("role") == "assistant" else msg.get("role", "user")
+                
+                # Handle different message formats
+                if isinstance(msg, dict):
+                    content = msg.get("content", "")
+                    messages.append(
+                        types.Content(
+                            role=role,
+                            parts=[types.Part(text=str(content))]
+                        )
+                    )
+                elif hasattr(msg, 'role') and hasattr(msg, 'parts'):
+                    # Already in proper format
+                    messages.append(msg)
         
         # Add current user input
         messages.append(
@@ -203,8 +219,8 @@ class Agent:
                     # Log token usage
                     if response.usage_metadata:
                         self.metrics["total_tokens"] += (
-                            response.usage_metadata.prompt_token_count +
-                            response.usage_metadata.candidates_token_count
+                            response.usage_metadata.prompt_token_count or 0 +
+                            response.usage_metadata.candidates_token_count or 0
                         )
                     
                     # Add response to messages
@@ -220,7 +236,7 @@ class Agent:
                         # Add function responses to messages
                         if function_responses:
                             messages.append(
-                                types.Content(role="user", parts=function_responses)
+                                types.Content(role="model", parts=function_responses)
                             )
                         
                         # Continue to next iteration for more processing
@@ -228,7 +244,7 @@ class Agent:
                     
                     # Check for final text response
                     if response.text:
-                        # Add to conversation history
+                        # Add to conversation history (using 'assistant' for internal storage)
                         self.conversation.add_message("assistant", response.text)
                         return response.text
                     
@@ -281,48 +297,70 @@ class Agent:
                         )
                     )
                 except Exception as e:
-                    self.logger.error(f"Function {function_name} failed: {e}")
+                    self.logger.error(f"Error executing function {function_name}: {e}")
                     responses.append(
                         types.Part(
-                            text=f"Function {function_name} failed: {e}"
+                            text=f"Error executing function {function_name}: {e}"
                         )
                     )
             else:
+                error_message = f"Function {function_name} not found."
+                self.logger.warning(error_message)
                 responses.append(
                     types.Part(
-                        text=f"Unknown function {function_name}"
+                        text=error_message
                     )
                 )
+            
             elapsed_time = time.time() - start_time
             self.logger.debug(f"Function {function_name} executed in {elapsed_time:.4f}s")
         
         return responses
-
+    
+    def _update_metrics(self, elapsed_time: float, success: bool = True):
+        """Update performance metrics."""
+        if success:
+            # Update average response time
+            total_successful = self.metrics["successful_requests"] + 1
+            current_avg = self.metrics["average_response_time"]
+            self.metrics["average_response_time"] = (
+                (current_avg * (total_successful - 1) + elapsed_time) / total_successful
+            )
+    
     def get_metrics(self) -> Dict[str, Any]:
         """Get performance metrics."""
         return self.metrics
-
+    
     def export_session(self, session_id: str, format: str = "json") -> str:
-        """Export conversation session."""
-        return self.conversation.export_session(session_id, format)
-
-    def search_history(self, query: str) -> List[Dict[str, str]]:
-        """Search conversation history."""
+        """Export a specific session in the given format."""
+        return self.conversation.export_session(session_id, format=format)
+    
+    def search_history(self, query: str) -> List[Dict[str, Any]]:
+        """Search conversation history for a specific query."""
         return self.conversation.search(query)
-
+    
     def cleanup(self):
-        """Clean up resources."""
-        self.logger.info("Cleaning up agent resources...")
-        self.conversation.close()
-        self.logger.info("Agent cleanup completed.")
-
-    def _update_metrics(self, elapsed_time: float, success: bool):
-        """Update performance metrics."""
-        self.metrics["average_response_time"] = (
-            self.metrics["average_response_time"] * (self.metrics["successful_requests"] - 1) + elapsed_time
-        ) / self.metrics["successful_requests"] if self.metrics["successful_requests"] > 0 else elapsed_time
-
-
-
-
-
+        """Clean up resources and save any pending data."""
+        try:
+            # Save current conversation session if history is enabled
+            if self.config.enable_history and hasattr(self.conversation, 'current_session'):
+                self.conversation.save_session(self.conversation.current_session)
+            
+            # Close any open file handles in logger
+            if hasattr(self.logger_manager, 'cleanup'):
+                self.logger_manager.cleanup()
+            
+            # Log final metrics
+            self.logger.info(f"Agent cleanup completed. Final metrics: {self.metrics}")
+            
+        except Exception as e:
+            # Use print as fallback if logger is already closed
+            print(f"Error during cleanup: {e}")
+    
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with cleanup."""
+        self.cleanup()
