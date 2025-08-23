@@ -8,6 +8,7 @@ from .conversation import ConversationManager
 from .logging_config import setup_logging, get_agent_logger
 from .tools.file_tools import (
     read_file, write_file, list_files, search_files,
+    create_file, delete_file, move_file, copy_file
 )
 from .tools.system_tools import (
     run_command, get_system_info, manage_processes,
@@ -75,6 +76,10 @@ class Agent:
             "write_file": write_file,
             "list_files": list_files,
             "search_files": search_files,
+            "create_file": create_file,
+            "delete_file": delete_file,
+            "move_file": move_file,
+            "copy_file": copy_file,
             
             # System tools
             "run_command": run_command,
@@ -82,9 +87,71 @@ class Agent:
             "manage_processes": manage_processes,
         }
         
+        # Create function declarations for file tools
+        file_tool_declarations = [
+            types.FunctionDeclaration(
+                name="read_file",
+                description="Read file contents with safety checks",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "file_path": types.Schema(type=types.Type.STRING, description="Path to the file"),
+                        "encoding": types.Schema(type=types.Type.STRING, description="File encoding (default: utf-8)"),
+                        "max_size": types.Schema(type=types.Type.INTEGER, description="Maximum file size to read in bytes")
+                    },
+                    required=["file_path"]
+                )
+            ),
+            types.FunctionDeclaration(
+                name="write_file",
+                description="Write content to a file with safety features",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "file_path": types.Schema(type=types.Type.STRING, description="Path to the file"),
+                        "content": types.Schema(type=types.Type.STRING, description="Content to write"),
+                        "encoding": types.Schema(type=types.Type.STRING, description="File encoding (default: utf-8)"),
+                        "create_dirs": types.Schema(type=types.Type.BOOLEAN, description="Create parent directories if needed"),
+                        "backup": types.Schema(type=types.Type.BOOLEAN, description="Create backup of existing file")
+                    },
+                    required=["file_path", "content"]
+                )
+            ),
+            types.FunctionDeclaration(
+                name="list_files",
+                description="List files in a directory with filtering options",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "directory": types.Schema(type=types.Type.STRING, description="Directory path (default: current directory)"),
+                        "pattern": types.Schema(type=types.Type.STRING, description="File pattern to match (default: *)"),
+                        "recursive": types.Schema(type=types.Type.BOOLEAN, description="Search recursively"),
+                        "include_hidden": types.Schema(type=types.Type.BOOLEAN, description="Include hidden files"),
+                        "file_type": types.Schema(type=types.Type.STRING, description="Filter by type: file, dir, or link"),
+                        "sort_by": types.Schema(type=types.Type.STRING, description="Sort by: name, size, or modified"),
+                        "limit": types.Schema(type=types.Type.INTEGER, description="Maximum number of files to return")
+                    },
+                    required=[]
+                )
+            ),
+            types.FunctionDeclaration(
+                name="search_files",
+                description="Search for files matching a pattern",
+                parameters=types.Schema(
+                    type=types.Type.OBJECT,
+                    properties={
+                        "directory": types.Schema(type=types.Type.STRING, description="Directory to search in"),
+                        "pattern": types.Schema(type=types.Type.STRING, description="File pattern to search for")
+                    },
+                    required=[]
+                )
+            ),
+        ]
+        
         # Create Gemini tools declaration
         self.available_tools = types.Tool(
             function_declarations=[
+                *file_tool_declarations,
                 schema_run_command,
                 schema_get_system_info,
                 schema_manage_processes,
@@ -92,6 +159,7 @@ class Agent:
         )
         
         self.logger.debug(f"Loaded {len(self.tool_functions)} tools")
+    
     
     def process_request(
         self,
@@ -156,30 +224,124 @@ class Agent:
             context_messages = self.conversation.get_context(max_messages=10)
             # Convert conversation messages to proper format
             for msg in context_messages:
-                # Map 'assistant' role to 'model' for Gemini API
-                role = "model" if msg.get("role") == "assistant" else msg.get("role", "user")
-                
-                # Handle different message formats
-                if isinstance(msg, dict):
-                    content = msg.get("content", "")
-                    messages.append(
-                        types.Content(
-                            role=role,
-                            parts=[types.Part(text=str(content))]
-                        )
-                    )
-                elif hasattr(msg, 'role') and hasattr(msg, 'parts'):
-                    # Already in proper format
-                    messages.append(msg)
+                try:
+                    # Check if it's already a Content object
+                    if isinstance(msg, types.Content):
+                        # Map roles to valid Gemini API roles
+                        if msg.role == "assistant":
+                            role = "model"
+                        elif msg.role == "user":
+                            role = "user"
+                        else:
+                            # Skip messages with invalid roles
+                            self.logger.warning(f"Skipping message with invalid role: {msg.role}")
+                            continue
+                        
+                        # Ensure parts exist and are not empty
+                        if msg.parts and len(msg.parts) > 0:
+                            # Check if parts have actual content
+                            valid_parts = []
+                            for part in msg.parts:
+                                if hasattr(part, 'text') and part.text and part.text.strip():
+                                    valid_parts.append(part)
+                                elif hasattr(part, 'function_response') and part.function_response:
+                                    valid_parts.append(part)
+                            
+                            if valid_parts:
+                                messages.append(
+                                    types.Content(
+                                        role=role,
+                                        parts=valid_parts
+                                    )
+                                )
+                        else:
+                            self.logger.warning("Skipping message with empty parts")
+                            
+                    elif isinstance(msg, dict):
+                        # Handle dictionary format
+                        msg_role = msg.get("role", "user")
+                        if msg_role == "assistant":
+                            role = "model"
+                        elif msg_role == "user":
+                            role = "user"
+                        else:
+                            # Skip messages with invalid roles
+                            self.logger.warning(f"Skipping message with invalid role: {msg_role}")
+                            continue
+                            
+                        content = msg.get("content", "")
+                        if content and str(content).strip():  # Only add non-empty messages
+                            messages.append(
+                                types.Content(
+                                    role=role,
+                                    parts=[types.Part(text=str(content).strip())]
+                                )
+                            )
+                    else:
+                        # Handle other formats - convert to string and assume user role
+                        content_str = str(msg).strip()
+                        if content_str:  # Only add non-empty messages
+                            messages.append(
+                                types.Content(
+                                    role="user",
+                                    parts=[types.Part(text=content_str)]
+                                )
+                            )
+                except Exception as e:
+                    self.logger.warning(f"Error processing message in history: {e}")
+                    continue
         
-        # Add current user input
-        messages.append(
-            types.Content(
-                role="user",
-                parts=[types.Part(text=user_input)]
+        # Add current user input - ensure it's not empty
+        user_input_stripped = user_input.strip()
+        if user_input_stripped:
+            messages.append(
+                types.Content(
+                    role="user",
+                    parts=[types.Part(text=user_input_stripped)]
+                )
             )
-        )
-        return messages
+        else:
+            # Fallback for empty user input
+            messages.append(
+                types.Content(
+                    role="user",
+                    parts=[types.Part(text="Hello")]
+                )
+            )
+        
+        # Final validation: ensure all messages have valid parts
+        validated_messages = []
+        for msg in messages:
+            if msg.parts and len(msg.parts) > 0:
+                # Double-check that at least one part has content
+                has_valid_content = False
+                for part in msg.parts:
+                    if (hasattr(part, 'text') and part.text and part.text.strip()) or \
+                       (hasattr(part, 'function_response') and part.function_response):
+                        has_valid_content = True
+                        break
+                
+                if has_valid_content:
+                    validated_messages.append(msg)
+                else:
+                    self.logger.warning(f"Skipping message with role '{msg.role}' - no valid content in parts")
+            else:
+                self.logger.warning(f"Skipping message with role '{msg.role}' - empty or missing parts")
+        
+        # Ensure we have at least one message
+        if not validated_messages:
+            validated_messages = [
+                types.Content(
+                    role="user",
+                    parts=[types.Part(text=user_input_stripped or "Hello")]
+                )
+            ]
+        
+        # Debug: Log message info for troubleshooting
+        message_info = [(msg.role, len(msg.parts), bool(msg.parts[0].text if msg.parts else False)) for msg in validated_messages]
+        self.logger.debug(f"Validated {len(validated_messages)} messages: {message_info}")
+        
+        return validated_messages
     
     def _generate_with_retry(
         self,
@@ -223,30 +385,30 @@ class Agent:
                             response.usage_metadata.candidates_token_count or 0
                         )
                     
-                    # Add response to messages
+                    # Add the model's response to the conversation
                     for candidate in response.candidates:
-                        messages.append(candidate.content)
+                        messages.append(types.Content(role="model", parts=candidate.content.parts))
                     
-                    # Handle function calls
+                    # Handle function calls if present (check this BEFORE checking for text)
                     if response.function_calls:
-                        function_responses = self._handle_function_calls(
-                            response.function_calls
-                        )
+                        function_responses = self._handle_function_calls(response.function_calls)
                         
-                        # Add function responses to messages
+                        # Add function responses as user message (like in your reference code)
                         if function_responses:
-                            messages.append(
-                                types.Content(role="model", parts=function_responses)
-                            )
+                            messages.append(types.Content(role="user", parts=function_responses))
                         
                         # Continue to next iteration for more processing
                         continue
-                    
-                    # Check for final text response
-                    if response.text:
-                        # Add to conversation history (using 'assistant' for internal storage)
-                        self.conversation.add_message("assistant", response.text)
-                        return response.text
+                    else:
+                        # No function calls, check if we have a final text response
+                        try:
+                            if response.text:
+                                # Add to conversation history
+                                self.conversation.add_message("assistant", response.text)
+                                return response.text
+                        except Exception:
+                            # response.text might raise an exception in some cases
+                            pass
                     
                     break  # Exit retry loop if successful
                 
@@ -273,13 +435,13 @@ class Agent:
         Returns:
             List of function response parts
         """
-        responses = []
+        function_responses = []
         
-        for function_call in function_calls:
+        for function_call_part in function_calls:
             self.metrics["function_calls"] += 1
             
-            function_name = function_call.name
-            function_args = dict(function_call.args)
+            function_name = function_call_part.name
+            function_args = dict(function_call_part.args)
             
             self.logger.info(f"Executing function: {function_name}")
             
@@ -290,32 +452,41 @@ class Agent:
                 try:
                     result = self.tool_functions[function_name](**function_args)
                     
-                    # Prepare function response
-                    responses.append(
-                        types.Part(
-                            text=str(result)
+                    # Create function response part (similar to your reference code)
+                    function_response_part = types.Part(
+                        function_response=types.FunctionResponse(
+                            name=function_name,
+                            response={"result": str(result)}
                         )
                     )
+                    function_responses.append(function_response_part)
+                    
                 except Exception as e:
                     self.logger.error(f"Error executing function {function_name}: {e}")
-                    responses.append(
-                        types.Part(
-                            text=f"Error executing function {function_name}: {e}"
+                    # Create error response
+                    function_response_part = types.Part(
+                        function_response=types.FunctionResponse(
+                            name=function_name,
+                            response={"error": f"Error executing function {function_name}: {e}"}
                         )
                     )
+                    function_responses.append(function_response_part)
             else:
                 error_message = f"Function {function_name} not found."
                 self.logger.warning(error_message)
-                responses.append(
-                    types.Part(
-                        text=error_message
+                # Create error response
+                function_response_part = types.Part(
+                    function_response=types.FunctionResponse(
+                        name=function_name,
+                        response={"error": error_message}
                     )
                 )
+                function_responses.append(function_response_part)
             
             elapsed_time = time.time() - start_time
             self.logger.debug(f"Function {function_name} executed in {elapsed_time:.4f}s")
         
-        return responses
+        return function_responses
     
     def _update_metrics(self, elapsed_time: float, success: bool = True):
         """Update performance metrics."""
