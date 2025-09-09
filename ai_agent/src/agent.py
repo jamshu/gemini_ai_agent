@@ -395,6 +395,7 @@ class Agent:
                         
                         # Add function responses as user message (like in your reference code)
                         if function_responses:
+                            self.logger.info(f"function response: {function_responses}")
                             messages.append(types.Content(role="user", parts=function_responses))
                         
                         # Continue to next iteration for more processing
@@ -456,7 +457,7 @@ class Agent:
             function_name = function_call_part.name
             function_args = dict(function_call_part.args)
             
-            self.logger.info(f"Executing function: {function_name}")
+            self.logger.info(f"Executing function: {function_name} fuction with args: {function_args}")
             
             # Execute function
             start_time = time.time()
