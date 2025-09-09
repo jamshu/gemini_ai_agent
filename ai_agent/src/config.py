@@ -61,7 +61,7 @@ class Config:
     temperature: float = 0.7
     
     # Directory settings
-    working_dir: Path = field(default_factory=lambda: Path.cwd())
+    working_dir: Path = field(default_factory=lambda: os.getenv("WORKING_DIRECTORY") or Path.cwd())
     cache_dir: Path = field(default_factory=lambda: Path.home() / ".ai_agent" / "cache")
     data_dir: Path = field(default_factory=lambda: Path.home() / ".ai_agent" / "data")
     

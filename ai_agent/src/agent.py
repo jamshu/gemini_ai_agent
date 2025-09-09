@@ -395,8 +395,12 @@ class Agent:
                         
                         # Add function responses as user message (like in your reference code)
                         if function_responses:
-                            self.logger.info(f"function response: {function_responses}")
-                            messages.append(types.Content(role="user", parts=function_responses))
+                         
+                            if function_responses[0].function_response and "error" in function_responses[0].function_response.response:
+                                self.logger.error(f"Function execution error: {function_responses[0].function_response.response['error']}")
+                            else:
+                                self.logger.info(f"Function executed successfully: {function_responses[0].function_response.name}")
+                                messages.append(types.Content(role="user", parts=function_responses))
                         
                         # Continue to next iteration for more processing
                         continue
